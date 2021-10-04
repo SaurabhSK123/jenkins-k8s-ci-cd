@@ -1,0 +1,7 @@
+---
+# vars file for slaves
+
+packages:
+        - kubelet
+        - kubeadm
+        - kubectl

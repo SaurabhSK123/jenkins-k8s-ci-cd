@@ -1,0 +1,78 @@
+- name: "Installation of docker"
+  package:
+          name: "docker"
+          state: present
+
+- name: "Start docker service"
+  service:
+          name: "docker"
+          state: started
+          enabled: yes
+
+- name: "Configuring yum repo for kubernetes"
+  yum_repository:
+          baseurl: "https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64"
+          name: "Kubernetes_Repolist"
+          description: "Yum Repo For Kubernetes"
+          gpgcheck: yes
+          gpgkey: https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+          repo_gpgcheck: yes
+          enabled: yes
+
+- name: "Installing kubeadm, kubectl and kubelet"
+  package:
+       name: "{{ packages }}"
+       state: present
+       update_cache: yes
+
+- name: "Pulling Images of Docker"
+  command: "kubeadm config images pull"
+
+- name: "Changing the Driver"
+  copy:
+      src: "/etc/ansible/roles/master/files/docker_daemon.json"
+      dest: "/etc/docker/daemon.json"
+  register: driver_output
+
+- name: "Restarting docker service"
+  service:
+      name: "docker"
+      state: restarted
+
+- debug:
+      var: driver_output
+
+- name: "Installing iproute-tc "
+  package:
+            name: "iproute-tc"
+            state: present
+
+- name: "Setting bridge-nf-call-iptables to 1"
+  shell: |
+       echo "1" > /proc/sys/net/bridge/bridge-nf-call-iptables
+  changed_when: false
+
+- name: "Starting the K8s_Master"
+  shell: "kubeadm init --pod-network-cidr=10.240.0.0/16 --ignore-preflight-errors=NumCPU --ignore-preflight-errors=Mem --node-name=master"
+  ignore_errors: yes
+
+- name: "Creating the directory for kube"
+  shell: "mkdir -p $HOME/.kube"
+
+- name: " Copy the kubernetes_admin file"
+  shell: "sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config"
+
+- name: " Changing the owner permission"
+  shell: "sudo chown $(id -u):$(id -g) $HOME/.kube/config"
+
+- name: "Configuring the flannel plugin"
+  shell: "kubectl apply  -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml"
+
+- name: "Token Generation"
+  shell: "kubeadm token create  --print-join-command"
+  register: k8s_token
+  ignore_errors: yes
+
+- debug:
+     var: k8s_token.stdout_lines
+  register: token
